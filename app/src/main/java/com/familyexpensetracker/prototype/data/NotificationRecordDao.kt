@@ -34,6 +34,47 @@ interface NotificationRecordDao {
         UPDATE notification_records
         SET isDeleted = 0,
             receivedAt = :receivedAt,
+            updatedAt = :updatedAt,
+            parseStatus = :parseStatus,
+            amount = :amount,
+            currency = :currency,
+            merchant = :merchant,
+            transactionName = :transactionName,
+            operationType = :operationType,
+            accountHint = :accountHint,
+            transactionDate = :transactionDate,
+            transactionDay = :transactionDay,
+            transactionTimestamp = :transactionTimestamp,
+            availableBalance = :availableBalance,
+            availableBalanceCurrency = :availableBalanceCurrency,
+            category = :category
+        WHERE fingerprint = :fingerprint AND isUserEdited = 0
+        """,
+    )
+    suspend fun refreshCapturedNotification(
+        fingerprint: String,
+        receivedAt: Long,
+        updatedAt: Long,
+        parseStatus: String,
+        amount: String?,
+        currency: String?,
+        merchant: String?,
+        transactionName: String?,
+        operationType: String,
+        accountHint: String?,
+        transactionDate: String?,
+        transactionDay: String?,
+        transactionTimestamp: Long?,
+        availableBalance: String?,
+        availableBalanceCurrency: String?,
+        category: String?,
+    ): Int
+
+    @Query(
+        """
+        UPDATE notification_records
+        SET isDeleted = 0,
+            receivedAt = :receivedAt,
             updatedAt = :updatedAt
         WHERE fingerprint = :fingerprint AND isDeleted = 1
         """,

@@ -45,6 +45,15 @@ class RaiffeisenNotificationParserTest {
     }
 
     @Test
+    fun parsesBareMaskedCardNumberFromRaiffeisenPush() {
+        val result = parser.parse(
+            "4054**2355 | Iznos 270,86 RSD | Gde: GOMEX | Raspoloživo 30.691,99 RSD",
+        )
+
+        assertEquals("2355", result?.accountHint)
+        assertEquals("30691.99", result?.availableBalance)
+    }
+    @Test
     fun ignoresNotificationWithoutAmount() {
         assertNull(parser.parse("Dobrodosli u aplikaciju Moja mBanka"))
     }
@@ -53,7 +62,7 @@ class RaiffeisenNotificationParserTest {
     fun parsesRealCardUsageWithLastFourDigitsAndAvailableBalance() {
         val result = parser.parse(
             "Koriscenje kartice 4054****2255 Datum: 31.05.2026 21:49 " +
-                "Iznos: 274,98 RSD Raspolozivo: 6.121,40 RSD Mesto: UNIVERS Novi Sad RS",
+                "Iznos: 274,98 RSD Raspoloživo: 6.121,40 RSD Mesto: UNIVERS Novi Sad RS",
         )
 
         assertEquals("274.98", result?.amount)
@@ -62,5 +71,14 @@ class RaiffeisenNotificationParserTest {
         assertEquals("6121.40", result?.availableBalance)
         assertEquals("RSD", result?.availableBalanceCurrency)
         assertNotNull(result?.transactionTimestamp)
+    }
+    @Test
+    fun parsesAvailableBalanceWithSerbianStanjeLabel() {
+        val result = parser.parse(
+            "Koriscenje kartice 4054****2255 Iznos: 274,98 RSD Raspoloživo stanje: 6.121,40 RSD",
+        )
+
+        assertEquals("6121.40", result?.availableBalance)
+        assertEquals("RSD", result?.availableBalanceCurrency)
     }
 }

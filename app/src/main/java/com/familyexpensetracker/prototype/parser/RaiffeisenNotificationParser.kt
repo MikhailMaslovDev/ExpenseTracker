@@ -71,10 +71,13 @@ class RaiffeisenNotificationParser : BankNotificationParser {
             ?.takeIf { it.isNotBlank() }
 
     private fun extractCardHint(text: String): String? =
-        CARD_FRAGMENT.find(text)
-            ?.groupValues
-            ?.get(1)
+        MASKED_CARD.find(text)
+            ?.value
             ?.let { fragment -> FOUR_DIGITS.findAll(fragment).lastOrNull()?.value }
+            ?: CARD_FRAGMENT.find(text)
+                ?.groupValues
+                ?.get(1)
+                ?.let { fragment -> FOUR_DIGITS.findAll(fragment).lastOrNull()?.value }
 
     internal fun parseTransactionTimestamp(value: String): Long? {
         for (formatter in DATE_TIME_FORMATTERS) {
@@ -109,11 +112,12 @@ class RaiffeisenNotificationParser : BankNotificationParser {
             """(?i)([+-]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?|[+-]?\d+(?:[.,]\d{1,2})?)\s*(RSD|DIN|EUR)\b""",
         )
         val AVAILABLE_BALANCE = Regex(
-            """(?i)\b(?:raspoloziv[oa]?|available(?:\s+balance)?|stanje)\s*[:=-]?\s*([+-]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?|[+-]?\d+(?:[.,]\d{1,2})?)\s*(RSD|DIN|EUR)\b""",
+            """(?i)\b(?:raspolo(?:z|ž)iv[oa]?(?:\s+stanje)?|available(?:\s+balance)?|stanje)\s*[:=-]?\s*([+-]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?|[+-]?\d+(?:[.,]\d{1,2})?)\s*(RSD|DIN|EUR)\b""",
         )
         val CARD_FRAGMENT = Regex(
             """(?i)\b(?:kartic(?:a|e|u|om)?|card)\b(.+?)(?=\s+(?:datum|date|iznos|amount|raspoloziv|available|stanje|kod|at|merchant)\b|$)""",
         )
+        val MASKED_CARD = Regex("""\b(?:\d{4}\*+\d{4}|\*{4,}\d{4})\b""")
         val FOUR_DIGITS = Regex("""\d{4}""")
         val DATE = Regex("""\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}(?:\s+\d{1,2}:\d{2})?\b""")
         val MERCHANT = Regex(

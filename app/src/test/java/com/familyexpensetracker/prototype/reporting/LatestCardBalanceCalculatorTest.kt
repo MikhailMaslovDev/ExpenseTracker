@@ -40,6 +40,20 @@ class LatestCardBalanceCalculatorTest {
     }
 
     @Test
+    fun usesOperationDateWhenNotificationDatesDisagree() {
+        val olderPushWithLaterOperationDate = record("2026-09-20T10:00:00Z", "2255", "226.71")
+            .copy(transactionTimestamp = Instant.parse("2026-09-30T10:00:00Z").toEpochMilli())
+        val latestPushWithEarlierOperationDate = record("2026-09-24T20:41:20Z", "2255", "30691.99")
+            .copy(transactionTimestamp = Instant.parse("2026-09-01T10:00:00Z").toEpochMilli())
+
+        assertEquals(
+            "226.71",
+            calculator.calculate(listOf(olderPushWithLaterOperationDate, latestPushWithEarlierOperationDate))
+                .single()
+                .amount,
+        )
+    }
+    @Test
     fun usesFriendlyAccountName() {
         val record = record("2026-06-03T10:00:00Z", "2255", "5800.00")
 

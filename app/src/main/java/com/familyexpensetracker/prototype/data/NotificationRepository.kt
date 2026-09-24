@@ -15,6 +15,12 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
+enum class NotificationCaptureResult {
+    ADDED,
+    UPDATED,
+    RESTORED,
+    DUPLICATE,
+}
 class NotificationRepository private constructor(
     private val database: AppDatabase,
     private val dao: NotificationRecordDao,
@@ -71,16 +77,40 @@ class NotificationRepository private constructor(
         title: String?,
         rawText: String,
         postedAt: Long,
-    ) {
+    ): NotificationCaptureResult {
         val parsed = parser.parse(rawText)
         val transactionName = categoryClassifier.normalizeTransactionName(parsed?.merchant)
+        val category = parsed?.let { suggestCategory(it.merchant, transactionName, it.operationType) }
         val now = System.currentTimeMillis()
         val fingerprint = NotificationFingerprint.create(packageName, title, rawText, postedAt)
+        if (
+            dao.refreshCapturedNotification(
+                fingerprint = fingerprint,
+                receivedAt = now,
+                updatedAt = now,
+                parseStatus = if (parsed == null) "UNPARSED" else "PARSED",
+                amount = parsed?.amount,
+                currency = parsed?.currency,
+                merchant = parsed?.merchant,
+                transactionName = transactionName,
+                operationType = parsed?.operationType?.name ?: OperationType.UNKNOWN.name,
+                accountHint = parsed?.accountHint,
+                transactionDate = parsed?.transactionDate,
+                transactionDay = parsed?.transactionTimestamp?.let(::dayOf) ?: dayOf(postedAt),
+                transactionTimestamp = parsed?.transactionTimestamp,
+                availableBalance = parsed?.availableBalance,
+                availableBalanceCurrency = parsed?.availableBalanceCurrency,
+                category = category,
+            ) > 0
+        ) {
+            ensureAccount(parsed?.accountHint, now)
+            return NotificationCaptureResult.UPDATED
+        }
         if (dao.restoreDeleted(fingerprint, receivedAt = now, updatedAt = now) > 0) {
             ensureAccount(parsed?.accountHint, now)
-            return
+            return NotificationCaptureResult.RESTORED
         }
-        dao.insert(
+        val inserted = dao.insert(
             NotificationRecordEntity(
                 fingerprint = fingerprint,
                 packageName = packageName,
@@ -101,13 +131,14 @@ class NotificationRepository private constructor(
                 transactionTimestamp = parsed?.transactionTimestamp,
                 availableBalance = parsed?.availableBalance,
                 availableBalanceCurrency = parsed?.availableBalanceCurrency,
-                category = parsed?.let { suggestCategory(it.merchant, transactionName, it.operationType) },
+                category = category,
                 isUserEdited = false,
                 isDeleted = false,
                 updatedAt = now,
             ),
         )
         ensureAccount(parsed?.accountHint, now)
+        return if (inserted > 0) NotificationCaptureResult.ADDED else NotificationCaptureResult.DUPLICATE
     }
 
     suspend fun updateTransaction(
