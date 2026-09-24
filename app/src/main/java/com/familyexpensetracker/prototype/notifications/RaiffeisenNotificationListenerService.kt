@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import com.familyexpensetracker.prototype.data.NotificationCaptureResult
 import com.familyexpensetracker.prototype.data.NotificationRepository
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.CoroutineScope
@@ -13,17 +14,27 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
+data class ActiveNotificationScanResult(
+    val processed: Int,
+    val added: Int,
+    val updated: Int,
+    val restored: Int,
+    val duplicates: Int,
+)
+
 class RaiffeisenNotificationListenerService : NotificationListenerService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onListenerConnected() {
         super.onListenerConnected()
         currentService = WeakReference(this)
-        scanActiveNotifications()
+        queueActiveNotificationScan()
     }
 
     override fun onNotificationPosted(statusBarNotification: StatusBarNotification) {
-        capture(statusBarNotification)
+        serviceScope.launch {
+            capture(statusBarNotification)
+        }
     }
 
     override fun onListenerDisconnected() {
@@ -32,12 +43,50 @@ class RaiffeisenNotificationListenerService : NotificationListenerService() {
         super.onListenerDisconnected()
     }
 
-    private fun scanActiveNotifications() {
-        activeNotifications.orEmpty().forEach(::capture)
+    private fun queueActiveNotificationScan(
+        onComplete: ((ActiveNotificationScanResult) -> Unit)? = null,
+    ) {
+        serviceScope.launch {
+            onComplete?.invoke(scanActiveNotifications())
+        }
     }
 
-    private fun capture(statusBarNotification: StatusBarNotification) {
-        if (!BankPackageAllowlist.contains(statusBarNotification.packageName)) return
+    private suspend fun scanActiveNotifications(): ActiveNotificationScanResult {
+        var processed = 0
+        var added = 0
+        var updated = 0
+        var restored = 0
+        var duplicates = 0
+
+        activeNotifications.orEmpty().forEach { notification ->
+            when (capture(notification)) {
+                null -> Unit
+                NotificationCaptureResult.ADDED -> {
+                    processed++
+                    added++
+                }
+                NotificationCaptureResult.UPDATED -> {
+                    processed++
+                    updated++
+                }
+                NotificationCaptureResult.RESTORED -> {
+                    processed++
+                    restored++
+                }
+                NotificationCaptureResult.DUPLICATE -> {
+                    processed++
+                    duplicates++
+                }
+            }
+        }
+
+        return ActiveNotificationScanResult(processed, added, updated, restored, duplicates)
+    }
+
+    private suspend fun capture(
+        statusBarNotification: StatusBarNotification,
+    ): NotificationCaptureResult? {
+        if (!BankPackageAllowlist.contains(statusBarNotification.packageName)) return null
 
         val notification = statusBarNotification.notification
         val extras = notification.extras
@@ -52,16 +101,14 @@ class RaiffeisenNotificationListenerService : NotificationListenerService() {
             .distinct()
             .joinToString("\n")
 
-        if (rawText.isBlank()) return
+        if (rawText.isBlank()) return null
 
-        serviceScope.launch {
-            NotificationRepository.getInstance(applicationContext).capture(
-                packageName = statusBarNotification.packageName,
-                title = title,
-                rawText = rawText,
-                postedAt = statusBarNotification.postTime,
-            )
-        }
+        return NotificationRepository.getInstance(applicationContext).capture(
+            packageName = statusBarNotification.packageName,
+            title = title,
+            rawText = rawText,
+            postedAt = statusBarNotification.postTime,
+        )
     }
 
     override fun onDestroy() {
@@ -74,9 +121,11 @@ class RaiffeisenNotificationListenerService : NotificationListenerService() {
         @Volatile
         private var currentService: WeakReference<RaiffeisenNotificationListenerService>? = null
 
-        fun requestActiveNotificationScan(): Boolean {
+        fun requestActiveNotificationScan(
+            onComplete: ((ActiveNotificationScanResult) -> Unit)? = null,
+        ): Boolean {
             val service = currentService?.get() ?: return false
-            service.scanActiveNotifications()
+            service.queueActiveNotificationScan(onComplete)
             return true
         }
 

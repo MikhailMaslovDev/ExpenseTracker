@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationManagerCompat
+import com.familyexpensetracker.prototype.notifications.ActiveNotificationScanResult
 import com.familyexpensetracker.prototype.notifications.RaiffeisenNotificationListenerService
 import com.familyexpensetracker.prototype.ui.ExpensePushPrototypeApp
 import java.time.LocalDate
@@ -73,7 +74,13 @@ class MainActivity : ComponentActivity() {
                     startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 },
                 scanActiveNotifications = {
-                    RaiffeisenNotificationListenerService.requestActiveNotificationScan()
+                    val started = RaiffeisenNotificationListenerService.requestActiveNotificationScan { result ->
+                        runOnUiThread { showScanResult(result) }
+                    }
+                    if (!started) {
+                        RaiffeisenNotificationListenerService.ensureConnected(this)
+                        Toast.makeText(this, "Notification listener is reconnecting", Toast.LENGTH_SHORT).show()
+                    }
                 },
                 exportTransactionsCsv = ::exportTransactionsCsv,
                 createBackup = ::createBackup,
@@ -95,6 +102,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun showScanResult(result: ActiveNotificationScanResult) {
+        val message = when (result.processed) {
+            0 -> "No active Raiffeisen pushes found"
+            else -> "Scan complete: ${result.processed} processed, ${result.added} added, " +
+                "${result.updated} updated, ${result.restored} restored"
+        }
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
     private fun hasNotificationAccess(): Boolean =
         NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
 
